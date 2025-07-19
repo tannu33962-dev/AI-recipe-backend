@@ -3,4 +3,5 @@ flask-cors
 pymongo
 python-dotenv
 werkzeug
-
+requests
+axios
