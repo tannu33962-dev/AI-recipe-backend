@@ -20,7 +20,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # App setup
 app = Flask(__name__)
-CORS(app)
+# CORS(app)
+
+
+#later on if didn't work out..
+CORS(app, origins=["https://ai-recipe-generator6.netlify.app"])
+
+
 client = MongoClient(mongo_uri)
 db = client[dbname]
 users_collection = db["users"]
