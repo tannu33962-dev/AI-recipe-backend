@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import os
 from flask import Flask, request, jsonify
 import requests
+from datetime import datetime
+
 
 # Load environment variables from .env
 load_dotenv()
@@ -22,6 +24,7 @@ CORS(app)
 client = MongoClient(mongo_uri)
 db = client[dbname]
 users_collection = db["users"]
+history_collection = db["history"]
 
 
 
@@ -66,41 +69,61 @@ def recipe():
     result = generate_recipe(prompt)
     return jsonify({"recipe": result})
 
+
+
+
 @app.route('/api/get_history', methods=['POST'])
 def get_history():
     data = request.json
-    email = data['email']
-    
-    user = db.users.find_one({'email': email}, {'_id': 0, 'history': 1})
-    return jsonify(user.get('history', [])) if user else jsonify([])
+    email = data.get('email')
+
+    # Look for the user document in the history collection
+    user_history = history_collection.find_one({'email': email}, {'_id': 0, 'history': 1})
+
+    if not user_history or 'history' not in user_history:
+        return jsonify([])  # Return empty list if no history found
+
+    return jsonify(user_history['history'][::-1])
 
 
 
-from datetime import datetime
 
 
 @app.route('/api/save_history', methods=['POST'])
 def save_history():
     data = request.json
-    email = data['email']
-    prompt = data['prompt']
-    response = data['response']
+    email = data.get('email')
+    prompt = data.get('prompt')
+    response = data.get('response')
     
-    db.users.update_one(
-        {'email': email},
-        {'$push': {
-            'history': {
-                'prompt': prompt,
-                'response': response,
-                'timestamp': datetime.now().isoformat()
-            }
-        }}
-    )
-    return jsonify({"message": "History saved successfully."})
+    if not email or not prompt or not response:
+        return jsonify({"error": "Missing fields"}), 400
+    
+    timestamp = datetime.utcnow().isoformat()
 
+    new_entry = {
+        "prompt": prompt,
+        "response": response,
+        "timestamp": timestamp
+    }
 
-
-
+    # ✅ Corrected: Use collection, not db
+    existing = history_collection.find_one({"email": email})
+    
+    if existing:
+        # ✅ Append new entry to existing history
+        history_collection.update_one(
+            {"email": email},
+            {"$push": {"history": new_entry}}
+        )
+    else:
+        # ✅ Create new document with history array
+        history_collection.insert_one({
+            "email": email,
+            "history": [new_entry]
+        })
+    
+    return jsonify({"message": "History saved successfully."}), 200
 
 
 
@@ -125,7 +148,8 @@ def login():
 
     user = users_collection.find_one({'email': email})
     if user and check_password_hash(user['password'], password):
-        return jsonify({"success": True, "message": "Login successful!"})
+        return jsonify({"success": True, "message": "Login successful!", "email": email})
+
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/')
